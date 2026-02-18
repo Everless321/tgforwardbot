@@ -164,6 +164,20 @@ export const verify2FA = (password: string): Promise<AuthActionResult> =>
 export const logout = (): Promise<AuthActionResult> =>
   request<AuthActionResult>('/api/auth/logout', { method: 'POST' })
 
+export interface LogEntry {
+  timestamp: string
+  level: string
+  logger: string
+  message: string
+}
+
+export const fetchLogs = (limit = 200, level?: string): Promise<LogEntry[]> => {
+  const q = new URLSearchParams()
+  q.set('limit', String(limit))
+  if (level) q.set('level', level)
+  return request<LogEntry[]>(`/api/logs?${q}`)
+}
+
 export const login = async (password: string): Promise<void> => {
   const res = await fetch('/api/login', {
     method: 'POST',

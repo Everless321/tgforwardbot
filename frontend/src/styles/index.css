@@ -792,3 +792,57 @@ body {
   padding: 10px 16px;
   font-size: 15px;
 }
+
+.log-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.log-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 12px;
+  height: calc(100vh - 180px);
+  overflow-y: auto;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.log-entry {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.log-entry:hover {
+  background: var(--bg-hover);
+}
+
+.log-time {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.log-level {
+  width: 56px;
+  flex-shrink: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.log-msg {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.log-empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 40px;
+}

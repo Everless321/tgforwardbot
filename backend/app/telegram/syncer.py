@@ -73,7 +73,6 @@ class HistorySyncer:
             return set(result.scalars().all())
 
     async def _sync(self, rule_id: int) -> None:
-        logger.info("Starting history sync for rule %d", rule_id)
         await self._set_sync_status(rule_id, SyncStatus.SYNCING, 0)
 
         async with self._session_factory() as session:
@@ -84,28 +83,31 @@ class HistorySyncer:
             source_chat_id = rule.source_chat_id
             target_chat_id = rule.target_chat_id
 
+        logger.info("[Sync] Rule %d: starting (source=%d -> target=%d)", rule_id, source_chat_id, target_chat_id)
         synced_ids = await self._get_synced_msg_ids(rule_id)
         synced_count = 0
+        skip_count = 0
 
         try:
             async for message in self.client.iter_messages(source_chat_id, reverse=True):
                 if message.id in synced_ids:
-                    synced_count += 1
+                    skip_count += 1
                     continue
 
                 try:
                     await self.forwarder.forward(message, target_chat_id, rule_id)
                     synced_count += 1
+                    logger.info("[Sync] Rule %d: progress %d messages forwarded", rule_id, synced_count)
                 except FloodWaitError as e:
-                    logger.warning("FloodWait %ds, sleeping...", e.seconds)
+                    logger.warning("[Sync] Rule %d: FloodWait %ds at msg %d, sleeping...", rule_id, e.seconds, message.id)
                     await asyncio.sleep(e.seconds + 1)
                     try:
                         await self.forwarder.forward(message, target_chat_id, rule_id)
                         synced_count += 1
                     except Exception as retry_err:
-                        logger.error("Retry failed msg %d: %s", message.id, retry_err)
+                        logger.error("[Sync] Rule %d: failed msg %d: %s", rule_id, message.id, retry_err)
                 except Exception as e:
-                    logger.error("Sync forward failed msg %d: %s", message.id, e)
+                    logger.error("[Sync] Rule %d: failed msg %d: %s", rule_id, message.id, e)
 
                 if synced_count % 10 == 0:
                     await self._set_sync_status(rule_id, SyncStatus.SYNCING, synced_count)
@@ -118,7 +120,7 @@ class HistorySyncer:
                 await asyncio.sleep(SEND_DELAY)
 
         except asyncio.CancelledError:
-            logger.info("Sync cancelled for rule %d at %d messages", rule_id, synced_count)
+            logger.info("[Sync] Rule %d: cancelled at %d messages", rule_id, synced_count)
             await self._set_sync_status(rule_id, SyncStatus.IDLE, synced_count)
             return
         except Exception as e:
@@ -134,4 +136,4 @@ class HistorySyncer:
             "rule_id": rule_id,
             "synced_count": synced_count,
         })
-        logger.info("History sync complete for rule %d: %d messages", rule_id, synced_count)
+        logger.info("[Sync] Rule %d: complete! %d forwarded, %d skipped", rule_id, synced_count, skip_count)

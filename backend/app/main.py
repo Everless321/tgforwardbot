@@ -9,11 +9,13 @@ from sqlalchemy import select
 from app.api.auth import router as auth_router
 from app.api.channels import router as channels_router
 from app.api.login import router as login_router
+from app.api.logs import router as logs_router
 from app.api.messages import router as messages_router
 from app.api.rules import router as rules_router
 from app.api.status import router as status_router
 from app.api.websocket import router as ws_router
 from app.core.config import settings
+from app.core.log_buffer import log_buffer
 from app.core.security import get_current_user
 from app.core.database import Base, async_session, engine
 from app.models.message import ForwardRule
@@ -26,6 +28,7 @@ logging.basicConfig(
     level=getattr(logging, settings.log_level),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logging.getLogger().addHandler(log_buffer)
 logger = logging.getLogger(__name__)
 
 
@@ -88,6 +91,7 @@ app.include_router(channels_router, dependencies=[Depends(get_current_user)])
 app.include_router(rules_router, dependencies=[Depends(get_current_user)])
 app.include_router(messages_router, dependencies=[Depends(get_current_user)])
 app.include_router(status_router, dependencies=[Depends(get_current_user)])
+app.include_router(logs_router, dependencies=[Depends(get_current_user)])
 # WebSocket routes need WebSocket-specific auth handling (Request-based deps like HTTPBearer
 # break under a websocket scope). See app/api/websocket.py.
 app.include_router(ws_router)
