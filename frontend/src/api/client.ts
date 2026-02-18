@@ -103,17 +103,17 @@ export interface TgChannel {
 }
 
 export const fetchChannels = (refresh = false): Promise<TgChannel[]> =>
-  request<TgChannel[]>(`/api/channels${refresh ? '?refresh=true' : ''}`)
+  request<TgChannel[]>(`/api/channels/${refresh ? '?refresh=true' : ''}`)
 
 export const fetchRules = (): Promise<Rule[]> =>
-  request<Rule[]>('/api/rules')
+  request<Rule[]>('/api/rules/')
 
 export const createRule = (body: {
   source_chat_id: number
   target_chat_id: number
   filters?: object
 }): Promise<Rule> =>
-  request<Rule>('/api/rules', { method: 'POST', body: JSON.stringify(body) })
+  request<Rule>('/api/rules/', { method: 'POST', body: JSON.stringify(body) })
 
 export const updateRule = (
   id: number,

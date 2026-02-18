@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { getToken } from '../api/client'
 import type { ForwardEvent } from '../api/client'
 
 export function useWebSocket(onEvent: (event: ForwardEvent) => void) {
@@ -12,7 +13,9 @@ export function useWebSocket(onEvent: (event: ForwardEvent) => void) {
 
     function connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      ws = new WebSocket(`${protocol}//${window.location.host}/ws/events`)
+      const token = getToken()
+      if (!token) return
+      ws = new WebSocket(`${protocol}//${window.location.host}/ws/events?token=${encodeURIComponent(token)}`)
 
       ws.onmessage = (e: MessageEvent) => {
         try {
