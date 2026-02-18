@@ -5,18 +5,38 @@ services:
       POSTGRES_DB: tgforward
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redisdata:/data
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/tgforward
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - session_data:/app
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:
   redisdata:
+  session_data:
