@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     log_level: str = "INFO"
     media_cache_dir: str = "media_cache"
+    auth_password: str = "zhc010321"
     auth_secret_key: str = "tgforwardbot-secret-key-change-me"
 
     model_config = {

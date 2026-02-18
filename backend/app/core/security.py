@@ -1,4 +1,3 @@
-import hashlib
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -7,7 +6,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
 
-FIXED_PASSWORD_HASH = hashlib.sha256(b"zhc010321").hexdigest()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
@@ -15,7 +13,7 @@ security_scheme = HTTPBearer()
 
 
 def verify_password(plain_password: str) -> bool:
-    return hashlib.sha256(plain_password.encode()).hexdigest() == FIXED_PASSWORD_HASH
+    return plain_password == settings.auth_password
 
 
 def create_access_token() -> str:
