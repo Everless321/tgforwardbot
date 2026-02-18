@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Rules from './pages/Rules'
 import Messages from './pages/Messages'
+import Account from './pages/Account'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/rules" element={<Rules />} />
         <Route path="/messages" element={<Messages />} />
+        <Route path="/account" element={<Account />} />
       </Route>
     </Routes>
   )

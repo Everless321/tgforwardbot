@@ -3,7 +3,17 @@ import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from telethon import TelegramClient
+from telethon import TelegramClient, helpers
+from telethon.tl.functions.messages import SendMediaRequest, SendMultiMediaRequest
+from telethon.tl.types import (
+    InputDocument,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputPhoto,
+    InputSingleMedia,
+    MessageMediaDocument,
+    MessageMediaPhoto,
+)
 
 from app.core.events import event_bus
 from app.models.message import ContentType, MessageLog, MessageStatus
@@ -35,6 +45,30 @@ def detect_content_type(message) -> ContentType:
     return ContentType.OTHER
 
 
+def _build_input_media(media):
+    if isinstance(media, MessageMediaDocument) and media.document:
+        doc = media.document
+        return InputMediaDocument(
+            id=InputDocument(
+                id=doc.id,
+                access_hash=doc.access_hash,
+                file_reference=doc.file_reference,
+            ),
+            spoiler=False,
+        )
+    if isinstance(media, MessageMediaPhoto) and media.photo:
+        photo = media.photo
+        return InputMediaPhoto(
+            id=InputPhoto(
+                id=photo.id,
+                access_hash=photo.access_hash,
+                file_reference=photo.file_reference,
+            ),
+            spoiler=False,
+        )
+    return None
+
+
 class MessageForwarder:
     def __init__(self, client: TelegramClient, session_factory: async_sessionmaker):
         self.client = client
@@ -47,8 +81,6 @@ class MessageForwarder:
             await self._collect_album(message, target_chat, rule_id)
             return
         await self._forward_single(message, target_chat, rule_id)
-
-    # ── single message ──────────────────────────────────────────────
 
     async def _forward_single(self, message, target_chat: int, rule_id: int) -> None:
         content_type = detect_content_type(message)
@@ -66,7 +98,7 @@ class MessageForwarder:
                 result = await self._try_forward(message, target_chat)
                 log.target_msg_id = result.id if result else None
                 log.status = MessageStatus.SUCCESS
-                logger.info("Forwarded msg %d -> %d", message.id, target_chat)
+                logger.info("Forwarded msg %d -> %d (type=%s)", message.id, target_chat, content_type.value)
                 await event_bus.publish({
                     "type": "forward_result",
                     "rule_id": rule_id,
@@ -94,37 +126,53 @@ class MessageForwarder:
 
             await session.commit()
 
+    async def _raw_send_media(self, message, target_chat: int):
+        input_media = _build_input_media(message.media)
+        if not input_media:
+            return None
+        target = await self.client.get_input_entity(target_chat)
+        result = await self.client(SendMediaRequest(
+            peer=target,
+            media=input_media,
+            message=message.text or "",
+            random_id=helpers.generate_random_long(),
+        ))
+        return result
+
     async def _try_forward(self, message, target_chat: int):
-        # Strategy 1: direct forward (unrestricted channels)
+        # S1: direct forward (unrestricted channels)
         try:
             result = await self.client.forward_messages(target_chat, message)
+            logger.info("[S1] direct forward OK for msg %d", message.id)
             return result[0] if isinstance(result, list) else result
-        except Exception:
-            pass
+        except Exception as e:
+            logger.info("[S1] failed msg %d: %s", message.id, e)
 
-        # Strategy 2: send media reference (file_id, avoids re-upload)
+        # S2: raw MTProto SendMediaRequest (bypass Telethon noforwards check)
         if message.media:
             try:
-                return await self.client.send_file(
-                    target_chat,
-                    message.media,
-                    caption=message.text or "",
-                    formatting_entities=message.entities,
-                )
-            except Exception:
-                pass
+                result = await self._raw_send_media(message, target_chat)
+                if result:
+                    logger.info("[S2] raw SendMediaRequest OK for msg %d", message.id)
+                    return result
+            except Exception as e:
+                logger.info("[S2] raw SendMediaRequest failed msg %d: %s", message.id, e)
 
-            # Strategy 3: download bytes → re-upload
+        # S3: download bytes → re-upload (last resort for media)
+        if message.media:
+            logger.info("[S3] downloading msg %d...", message.id)
             data = await self.client.download_media(message, bytes)
             if data:
-                return await self.client.send_file(
+                result = await self.client.send_file(
                     target_chat,
                     data,
                     caption=message.text or "",
                     formatting_entities=message.entities,
                 )
+                logger.info("[S3] download+reupload OK for msg %d", message.id)
+                return result
 
-        # Strategy 4: text-only
+        # S4: text-only
         if message.text:
             return await self.client.send_message(
                 target_chat,
@@ -206,32 +254,46 @@ class MessageForwarder:
             await session.commit()
 
     async def _try_forward_album(self, messages: list, target_chat: int) -> list:
-        # Strategy 1: direct forward
+        # S1: direct forward
         try:
             return await self.client.forward_messages(target_chat, messages)
         except Exception:
             pass
 
-        # Strategy 2: send media references as album
-        try:
-            files = [m.media for m in messages if m.media]
-            captions = [m.text or "" for m in messages if m.media]
-            if files:
-                return await self.client.send_file(target_chat, files, caption=captions)
-        except Exception:
-            pass
+        # S2: raw MTProto SendMultiMediaRequest (bypass noforwards)
+        target = await self.client.get_input_entity(target_chat)
+        multi_media = []
+        for m in messages:
+            if m.media:
+                im = _build_input_media(m.media)
+                if im:
+                    multi_media.append(InputSingleMedia(
+                        media=im,
+                        message=m.text or "",
+                        random_id=helpers.generate_random_long(),
+                    ))
+        if multi_media:
+            try:
+                result = await self.client(SendMultiMediaRequest(
+                    peer=target,
+                    multi_media=multi_media,
+                ))
+                logger.info("[S2] raw SendMultiMediaRequest OK for album")
+                return result
+            except Exception as e:
+                logger.info("[S2] raw SendMultiMediaRequest failed: %s", e)
 
-        # Strategy 3: download all → re-upload as album
+        # S3: download → re-upload (last resort)
         files = []
-        captions = []
+        caps = []
         for msg in messages:
             if msg.media:
                 data = await self.client.download_media(msg, bytes)
                 if data:
                     files.append(data)
-                    captions.append(msg.text or "")
+                    caps.append(msg.text or "")
 
         if files:
-            return await self.client.send_file(target_chat, files, caption=captions)
+            return await self.client.send_file(target_chat, files, caption=caps)
 
         raise RuntimeError("Album forward failed: no media found")

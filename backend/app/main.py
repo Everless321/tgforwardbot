@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
+from app.api.auth import router as auth_router
+from app.api.channels import router as channels_router
 from app.api.messages import router as messages_router
 from app.api.rules import router as rules_router
 from app.api.status import router as status_router
@@ -16,6 +18,7 @@ from app.models.message import ForwardRule
 from app.telegram.client import create_client
 from app.telegram.forwarder import MessageForwarder
 from app.telegram.handlers import register_handlers
+from app.telegram.syncer import HistorySyncer
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
@@ -44,17 +47,23 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    rule_map = await load_rules_from_db()
     client = create_client()
     forwarder = MessageForwarder(client, async_session)
-    register_handlers(client, rule_map, forwarder)
-    await client.start()
+    syncer = HistorySyncer(client, forwarder, async_session)
+    await client.connect()
 
     app.state.tg_client = client
     app.state.forwarder = forwarder
-    app.state.rule_map = rule_map
+    app.state.syncer = syncer
+    app.state.rule_map = {}
 
-    logger.info("TG Forward Bot started. Monitoring %d source channels.", len(rule_map))
+    if await client.is_user_authorized():
+        rule_map = await load_rules_from_db()
+        register_handlers(client, rule_map, forwarder)
+        app.state.rule_map = rule_map
+        logger.info("TG Forward Bot started. Monitoring %d source channels.", len(rule_map))
+    else:
+        logger.info("TG Forward Bot started. Waiting for web UI authentication.")
 
     yield
 
@@ -71,6 +80,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+app.include_router(channels_router)
 app.include_router(rules_router)
 app.include_router(messages_router)
 app.include_router(status_router)
@@ -78,4 +89,4 @@ app.include_router(ws_router)
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8001, reload=False)

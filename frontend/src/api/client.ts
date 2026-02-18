@@ -4,6 +4,8 @@ export interface Rule {
   target_chat_id: number
   enabled: boolean
   filters: Record<string, unknown> | null
+  sync_status: 'idle' | 'syncing' | 'done'
+  synced_msg_count: number
   created_at: string
   message_count: number
 }
@@ -46,6 +48,22 @@ export interface ForwardEvent {
   timestamp: string
 }
 
+export interface AuthUser {
+  phone: string
+  first_name: string
+  username: string | null
+}
+
+export interface AuthStatus {
+  authorized: boolean
+  user: AuthUser | null
+}
+
+export interface AuthActionResult {
+  status: string
+  user: AuthUser | null
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -55,6 +73,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
+
+export interface TgChannel {
+  id: number
+  title: string
+  type: 'channel' | 'group'
+  username: string | null
+}
+
+export const fetchChannels = (refresh = false): Promise<TgChannel[]> =>
+  request<TgChannel[]>(`/api/channels${refresh ? '?refresh=true' : ''}`)
 
 export const fetchRules = (): Promise<Rule[]> =>
   request<Rule[]>('/api/rules')
@@ -75,6 +103,12 @@ export const updateRule = (
 export const deleteRule = (id: number): Promise<void> =>
   request<void>(`/api/rules/${id}`, { method: 'DELETE' })
 
+export const startSync = (id: number): Promise<{ status: string; rule_id: number }> =>
+  request(`/api/rules/${id}/sync`, { method: 'POST' })
+
+export const stopSync = (id: number): Promise<{ status: string; rule_id: number }> =>
+  request(`/api/rules/${id}/sync/stop`, { method: 'POST' })
+
 export interface FetchMessagesParams {
   page?: number
   page_size?: number
@@ -93,3 +127,18 @@ export const fetchMessages = (params: FetchMessagesParams = {}): Promise<Message
 
 export const fetchStatus = (): Promise<Status> =>
   request<Status>('/api/status')
+
+export const fetchAuthStatus = (): Promise<AuthStatus> =>
+  request<AuthStatus>('/api/auth/status')
+
+export const sendCode = (phone: string): Promise<AuthActionResult> =>
+  request<AuthActionResult>('/api/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) })
+
+export const verifyCode = (code: string): Promise<AuthActionResult> =>
+  request<AuthActionResult>('/api/auth/verify', { method: 'POST', body: JSON.stringify({ code }) })
+
+export const verify2FA = (password: string): Promise<AuthActionResult> =>
+  request<AuthActionResult>('/api/auth/2fa', { method: 'POST', body: JSON.stringify({ password }) })
+
+export const logout = (): Promise<AuthActionResult> =>
+  request<AuthActionResult>('/api/auth/logout', { method: 'POST' })

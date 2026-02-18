@@ -25,9 +25,23 @@ async def _rule_with_count(rule: ForwardRule, session) -> RuleResponse:
         target_chat_id=rule.target_chat_id,
         enabled=rule.enabled,
         filters=filters,
+        sync_status=rule.sync_status.value,
+        synced_msg_count=rule.synced_msg_count,
         created_at=rule.created_at,
         message_count=count,
     )
+
+
+async def _rebuild_handlers(app) -> None:
+    from app.main import load_rules_from_db
+
+    rule_map = await load_rules_from_db()
+    app.state.rule_map = rule_map
+
+    client = getattr(app.state, "tg_client", None)
+    forwarder = getattr(app.state, "forwarder", None)
+    if client and forwarder:
+        register_handlers(client, rule_map, forwarder)
 
 
 @router.get("/", response_model=list[RuleResponse])
@@ -59,13 +73,7 @@ async def create_rule(body: RuleCreate, request: Request):
         await session.commit()
         await session.refresh(rule)
 
-    rule_map: dict = getattr(request.app.state, "rule_map", {})
-    rule_map.setdefault(rule.source_chat_id, []).append((rule.target_chat_id, rule.id))
-
-    client = getattr(request.app.state, "tg_client", None)
-    forwarder = getattr(request.app.state, "forwarder", None)
-    if client and forwarder:
-        register_handlers(client, rule_map, forwarder)
+    await _rebuild_handlers(request.app)
 
     async with async_session() as session:
         r = await session.get(ForwardRule, rule.id)
@@ -73,7 +81,7 @@ async def create_rule(body: RuleCreate, request: Request):
 
 
 @router.put("/{rule_id}", response_model=RuleResponse)
-async def update_rule(rule_id: int, body: RuleUpdate):
+async def update_rule(rule_id: int, body: RuleUpdate, request: Request):
     async with async_session() as session:
         rule = await session.get(ForwardRule, rule_id)
         if not rule:
@@ -86,7 +94,10 @@ async def update_rule(rule_id: int, body: RuleUpdate):
 
         await session.commit()
         await session.refresh(rule)
-        return await _rule_with_count(rule, session)
+        resp = await _rule_with_count(rule, session)
+
+    await _rebuild_handlers(request.app)
+    return resp
 
 
 @router.delete("/{rule_id}", status_code=204)
@@ -96,15 +107,38 @@ async def delete_rule(rule_id: int, request: Request):
         if not rule:
             raise HTTPException(status_code=404, detail="Rule not found")
 
-        source_id = rule.source_chat_id
-        target_id = rule.target_chat_id
         await session.delete(rule)
         await session.commit()
 
-    rule_map: dict = getattr(request.app.state, "rule_map", {})
-    targets = rule_map.get(source_id, [])
-    rule_map[source_id] = [(t, rid) for t, rid in targets if rid != rule_id]
-    if not rule_map[source_id]:
-        del rule_map[source_id]
+    await _rebuild_handlers(request.app)
 
-    _ = target_id
+
+@router.post("/{rule_id}/sync")
+async def start_sync(rule_id: int, request: Request):
+    async with async_session() as session:
+        rule = await session.get(ForwardRule, rule_id)
+        if not rule:
+            raise HTTPException(status_code=404, detail="Rule not found")
+
+    syncer = getattr(request.app.state, "syncer", None)
+    if not syncer:
+        raise HTTPException(status_code=503, detail="Syncer not initialized")
+
+    started = syncer.start_sync(rule_id)
+    if not started:
+        raise HTTPException(status_code=409, detail="Sync already running")
+
+    return {"status": "started", "rule_id": rule_id}
+
+
+@router.post("/{rule_id}/sync/stop")
+async def stop_sync(rule_id: int, request: Request):
+    syncer = getattr(request.app.state, "syncer", None)
+    if not syncer:
+        raise HTTPException(status_code=503, detail="Syncer not initialized")
+
+    stopped = syncer.stop_sync(rule_id)
+    if not stopped:
+        raise HTTPException(status_code=409, detail="No sync running for this rule")
+
+    return {"status": "stopped", "rule_id": rule_id}

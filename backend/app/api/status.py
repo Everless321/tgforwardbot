@@ -15,7 +15,7 @@ async def get_status(request: Request):
     client = getattr(request.app.state, "tg_client", None)
     connected = client is not None and client.is_connected()
 
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     async with async_session() as session:
         rules_count = (await session.execute(select(func.count()).select_from(ForwardRule))).scalar_one()

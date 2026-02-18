@@ -20,6 +20,8 @@ class RuleResponse(BaseModel):
     target_chat_id: int
     enabled: bool
     filters: dict | None
+    sync_status: str
+    synced_msg_count: int
     created_at: datetime
     message_count: int
 

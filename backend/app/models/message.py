@@ -13,6 +13,12 @@ class MessageStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class SyncStatus(str, enum.Enum):
+    IDLE = "idle"
+    SYNCING = "syncing"
+    DONE = "done"
+
+
 class ContentType(str, enum.Enum):
     TEXT = "text"
     PHOTO = "photo"
@@ -34,6 +40,10 @@ class ForwardRule(Base):
     target_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     enabled: Mapped[bool] = mapped_column(default=True)
     filters: Mapped[str | None] = mapped_column(Text)
+    sync_status: Mapped[SyncStatus] = mapped_column(
+        Enum(SyncStatus), default=SyncStatus.IDLE
+    )
+    synced_msg_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     messages: Mapped[list["MessageLog"]] = relationship(back_populates="rule")

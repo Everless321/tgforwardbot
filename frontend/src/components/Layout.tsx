@@ -22,6 +22,12 @@ export default function Layout() {
             Messages
           </NavLink>
         </nav>
+        <div className="sidebar-bottom">
+          <NavLink to="/account" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            <span className="nav-icon">👤</span>
+            Account
+          </NavLink>
+        </div>
       </aside>
       <main className="content">
         <Outlet />
