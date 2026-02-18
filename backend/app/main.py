@@ -88,7 +88,9 @@ app.include_router(channels_router, dependencies=[Depends(get_current_user)])
 app.include_router(rules_router, dependencies=[Depends(get_current_user)])
 app.include_router(messages_router, dependencies=[Depends(get_current_user)])
 app.include_router(status_router, dependencies=[Depends(get_current_user)])
-app.include_router(ws_router, dependencies=[Depends(get_current_user)])
+# WebSocket routes need WebSocket-specific auth handling (Request-based deps like HTTPBearer
+# break under a websocket scope). See app/api/websocket.py.
+app.include_router(ws_router)
 
 
 if __name__ == "__main__":
