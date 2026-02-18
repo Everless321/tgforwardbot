@@ -64,11 +64,32 @@ export interface AuthActionResult {
   user: AuthUser | null
 }
 
+const TOKEN_KEY = 'token'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
+function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = getToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  const res = await fetch(path, { headers, ...options })
+  if (res.status === 401) {
+    clearToken()
+    window.location.href = '/login'
+    throw new Error('Unauthorized')
+  }
   if (res.status === 204) return undefined as unknown as T
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
   return res.json() as Promise<T>
@@ -142,3 +163,17 @@ export const verify2FA = (password: string): Promise<AuthActionResult> =>
 
 export const logout = (): Promise<AuthActionResult> =>
   request<AuthActionResult>('/api/auth/logout', { method: 'POST' })
+
+export const login = async (password: string): Promise<void> => {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: '登录失败' }))
+    throw new Error(data.detail || '登录失败')
+  }
+  const data = await res.json()
+  setToken(data.access_token)
+}

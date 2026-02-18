@@ -2,17 +2,19 @@ import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.api.auth import router as auth_router
 from app.api.channels import router as channels_router
+from app.api.login import router as login_router
 from app.api.messages import router as messages_router
 from app.api.rules import router as rules_router
 from app.api.status import router as status_router
 from app.api.websocket import router as ws_router
 from app.core.config import settings
+from app.core.security import get_current_user
 from app.core.database import Base, async_session, engine
 from app.models.message import ForwardRule
 from app.telegram.client import create_client
@@ -80,12 +82,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)
-app.include_router(channels_router)
-app.include_router(rules_router)
-app.include_router(messages_router)
-app.include_router(status_router)
-app.include_router(ws_router)
+app.include_router(login_router)
+app.include_router(auth_router, dependencies=[Depends(get_current_user)])
+app.include_router(channels_router, dependencies=[Depends(get_current_user)])
+app.include_router(rules_router, dependencies=[Depends(get_current_user)])
+app.include_router(messages_router, dependencies=[Depends(get_current_user)])
+app.include_router(status_router, dependencies=[Depends(get_current_user)])
+app.include_router(ws_router, dependencies=[Depends(get_current_user)])
 
 
 if __name__ == "__main__":
