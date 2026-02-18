@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 from datetime import datetime, timezone
 
@@ -67,6 +68,36 @@ def _build_input_media(media):
             spoiler=False,
         )
     return None
+
+
+def _guess_upload_name(message) -> str:
+    file = getattr(message, "file", None)
+    if file and getattr(file, "name", None):
+        return file.name
+
+    ext = None
+    if file and getattr(file, "ext", None):
+        ext = file.ext
+
+    if not ext:
+        if message.photo:
+            ext = ".jpg"
+        elif message.video or message.video_note:
+            ext = ".mp4"
+        elif message.audio or message.voice:
+            ext = ".ogg"
+        elif message.document:
+            ext = ".bin"
+        else:
+            ext = ".bin"
+
+    return f"msg_{message.id}{ext}"
+
+
+def _named_bytes_io(data: bytes, filename: str) -> io.BytesIO:
+    bio = io.BytesIO(data)
+    bio.name = filename
+    return bio
 
 
 class MessageForwarder:
@@ -163,9 +194,10 @@ class MessageForwarder:
             logger.info("[S3] downloading msg %d...", message.id)
             data = await self.client.download_media(message, bytes)
             if data:
+                upload_file = _named_bytes_io(data, _guess_upload_name(message))
                 result = await self.client.send_file(
                     target_chat,
-                    data,
+                    upload_file,
                     caption=message.text or "",
                     formatting_entities=message.entities,
                 )
@@ -290,7 +322,7 @@ class MessageForwarder:
             if msg.media:
                 data = await self.client.download_media(msg, bytes)
                 if data:
-                    files.append(data)
+                    files.append(_named_bytes_io(data, _guess_upload_name(msg)))
                     caps.append(msg.text or "")
 
         if files:
