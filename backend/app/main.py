@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from app.api.auth import router as auth_router
 from app.api.channels import router as channels_router
@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.log_buffer import log_buffer
 from app.core.security import get_current_user
 from app.core.database import Base, async_session, engine
-from app.models.message import ForwardRule
+from app.models.message import ForwardRule, SyncStatus
 from app.telegram.client import create_client
 from app.telegram.forwarder import MessageForwarder
 from app.telegram.handlers import register_handlers
@@ -58,6 +58,15 @@ async def lifespan(app: FastAPI):
             ))
         except Exception:
             pass
+
+    # 重启时将残留的 SYNCING 状态重置为 IDLE
+    async with async_session() as session:
+        await session.execute(
+            update(ForwardRule)
+            .where(ForwardRule.sync_status == SyncStatus.SYNCING)
+            .values(sync_status=SyncStatus.IDLE)
+        )
+        await session.commit()
 
     client = create_client()
     forwarder = MessageForwarder(client, async_session)

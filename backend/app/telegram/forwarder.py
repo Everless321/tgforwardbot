@@ -13,6 +13,8 @@ from telethon.tl.types import (
     InputDocument,
     InputMediaDocument,
     InputMediaPhoto,
+    InputMediaUploadedDocument,
+    InputMediaUploadedPhoto,
     InputPhoto,
     InputSingleMedia,
     MessageMediaDocument,
@@ -25,6 +27,7 @@ from app.models.message import ContentType, MessageLog, MessageStatus
 logger = logging.getLogger(__name__)
 
 ALBUM_WAIT_SECONDS = 1.5
+PHOTO_SIZE_LIMIT = 10 * 1024 * 1024  # 10MB, Telegram 照片上传限制
 
 
 def detect_content_type(message) -> ContentType:
@@ -232,9 +235,10 @@ class MessageForwarder:
             if data:
                 media_attrs = _extract_media_attrs(message)
                 file_name = media_attrs.get("file_name", _guess_upload_name(message))
-                upload_file = _named_bytes_io(data, file_name)
-
+                is_video = bool(message.video or message.video_note)
                 thumb = await _download_thumb(self.client, message)
+
+                upload_file = _named_bytes_io(data, file_name)
 
                 send_kwargs = {
                     "caption": message.text or "",
@@ -244,6 +248,9 @@ class MessageForwarder:
                 if thumb:
                     send_kwargs["thumb"] = _named_bytes_io(thumb, "thumb.jpg")
 
+                if is_video:
+                    send_kwargs["supports_streaming"] = True
+
                 if media_attrs.get("duration") is not None:
                     send_kwargs["duration"] = media_attrs["duration"]
                     if media_attrs.get("voice"):
@@ -251,7 +258,6 @@ class MessageForwarder:
                     if media_attrs.get("w"):
                         send_kwargs["width"] = media_attrs["w"]
                         send_kwargs["height"] = media_attrs["h"]
-                        send_kwargs["supports_streaming"] = media_attrs.get("supports_streaming", True)
 
                 if media_attrs.get("title"):
                     send_kwargs["title"] = media_attrs["title"]
@@ -260,7 +266,12 @@ class MessageForwarder:
 
                 send_kwargs = {k: v for k, v in send_kwargs.items() if v is not None}
 
-                result = await self.client.send_file(target_chat, upload_file, **send_kwargs)
+                force_document = False
+                if message.photo and len(data) > PHOTO_SIZE_LIMIT:
+                    force_document = True
+                    logger.info("[规则 %d] 消息 %d 照片超过10MB, 改为文档发送", rule_id, message.id)
+
+                result = await self.client.send_file(target_chat, upload_file, force_document=force_document, **send_kwargs)
                 logger.info(
                     "[规则 %d] S3 下载重传成功消息 %d (封面=%s, 时长=%s)",
                     rule_id, message.id, thumb is not None, media_attrs.get("duration"),
@@ -382,20 +393,68 @@ class MessageForwarder:
             except Exception as e:
                 logger.info("[规则 %d] S2 相册失败: %s, 尝试 S3...", rule_id, e)
 
-        # S3: 下载 → 重传
-        files = []
-        caps = []
-        for msg in messages:
-            if msg.media:
-                data = await self.client.download_media(msg, bytes)
-                if data:
-                    media_attrs = _extract_media_attrs(msg)
-                    file_name = media_attrs.get("file_name", _guess_upload_name(msg))
-                    files.append(_named_bytes_io(data, file_name))
-                    caps.append(msg.text or "")
+        # S3: 下载 → 重传 (保留视频元数据和缩略图)
+        target = await self.client.get_input_entity(target_chat)
+        multi_media = []
 
-        if files:
-            logger.info("[规则 %d] S3 相册下载重传 (%d 个文件) -> 发送中", rule_id, len(files))
-            return await self.client.send_file(target_chat, files, caption=caps)
+        for msg in messages:
+            if not msg.media:
+                continue
+            data = await self.client.download_media(msg, bytes)
+            if not data:
+                continue
+
+            media_attrs = _extract_media_attrs(msg)
+            file_name = media_attrs.get("file_name", _guess_upload_name(msg))
+            is_video = bool(msg.video or msg.video_note)
+
+            uploaded = await self.client.upload_file(_named_bytes_io(data, file_name))
+
+            if msg.photo and len(data) <= PHOTO_SIZE_LIMIT:
+                input_media = InputMediaUploadedPhoto(file=uploaded)
+            else:
+                attributes = [DocumentAttributeFilename(file_name=file_name)]
+                mime_type = "application/octet-stream"
+                thumb_uploaded = None
+
+                if is_video:
+                    attributes.append(DocumentAttributeVideo(
+                        duration=int(media_attrs.get("duration", 0)),
+                        w=media_attrs.get("w", 0),
+                        h=media_attrs.get("h", 0),
+                        supports_streaming=True,
+                    ))
+                    mime_type = "video/mp4"
+                    thumb_data = await _download_thumb(self.client, msg)
+                    if thumb_data:
+                        thumb_uploaded = await self.client.upload_file(
+                            _named_bytes_io(thumb_data, "thumb.jpg")
+                        )
+                elif msg.photo:
+                    mime_type = "image/jpeg"
+                elif hasattr(msg.media, "document") and msg.media.document:
+                    mime_type = msg.media.document.mime_type or mime_type
+
+                input_media = InputMediaUploadedDocument(
+                    file=uploaded,
+                    mime_type=mime_type,
+                    attributes=attributes,
+                    thumb=thumb_uploaded,
+                )
+
+            multi_media.append(InputSingleMedia(
+                media=input_media,
+                message=msg.text or "",
+                random_id=helpers.generate_random_long(),
+                entities=msg.entities,
+            ))
+
+        if multi_media:
+            logger.info("[规则 %d] S3 相册下载重传 (%d 个文件) -> 发送中", rule_id, len(multi_media))
+            result = await self.client(SendMultiMediaRequest(
+                peer=target,
+                multi_media=multi_media,
+            ))
+            return result
 
         raise RuntimeError("相册转发失败: 无媒体内容")

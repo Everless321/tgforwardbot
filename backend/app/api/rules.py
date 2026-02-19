@@ -136,12 +136,22 @@ async def start_sync(rule_id: int, request: Request):
 
 @router.post("/{rule_id}/sync/stop")
 async def stop_sync(rule_id: int, request: Request):
+    from app.models.message import SyncStatus
+
     syncer = getattr(request.app.state, "syncer", None)
     if not syncer:
         raise HTTPException(status_code=503, detail="Syncer not initialized")
 
     stopped = syncer.stop_sync(rule_id)
+
+    # 即使内存中没有任务，也将数据库状态重置为 IDLE（处理重启后残留状态）
     if not stopped:
-        raise HTTPException(status_code=409, detail="No sync running for this rule")
+        async with async_session() as session:
+            rule = await session.get(ForwardRule, rule_id)
+            if rule and rule.sync_status == SyncStatus.SYNCING:
+                rule.sync_status = SyncStatus.IDLE
+                await session.commit()
+                return {"status": "stopped", "rule_id": rule_id}
+            raise HTTPException(status_code=409, detail="No sync running for this rule")
 
     return {"status": "stopped", "rule_id": rule_id}
