@@ -88,8 +88,63 @@ class HistorySyncer:
         synced_count = 0
         skip_count = 0
 
+        # Buffer for album messages
+        album_buffer: list = []
+        album_gid: int | None = None
+
+        async def flush_album() -> None:
+            nonlocal synced_count, skip_count
+            if not album_buffer:
+                return
+            msg_ids = [m.id for m in album_buffer]
+            if all(mid in synced_ids for mid in msg_ids):
+                skip_count += len(msg_ids)
+                album_buffer.clear()
+                return
+            try:
+                await self.forwarder.forward_album(album_buffer, target_chat_id, rule_id)
+                synced_count += 1
+                logger.info(
+                    "[同步] 规则 %d: 已转发相册 (%d 条), 总计 %d",
+                    rule_id, len(album_buffer), synced_count,
+                )
+            except FloodWaitError as e:
+                logger.warning("[同步] 规则 %d: 限流等待 %d 秒", rule_id, e.seconds)
+                await asyncio.sleep(e.seconds + 1)
+                try:
+                    await self.forwarder.forward_album(album_buffer, target_chat_id, rule_id)
+                    synced_count += 1
+                except Exception as retry_err:
+                    logger.error("[同步] 规则 %d: 相册失败: %s", rule_id, retry_err)
+            except Exception as e:
+                logger.error("[同步] 规则 %d: 相册失败: %s", rule_id, e)
+            album_buffer.clear()
+
+            if synced_count % 10 == 0:
+                await self._set_sync_status(rule_id, SyncStatus.SYNCING, synced_count)
+                await event_bus.publish({
+                    "type": "sync_progress",
+                    "rule_id": rule_id,
+                    "synced_count": synced_count,
+                })
+            await asyncio.sleep(SEND_DELAY)
+
         try:
             async for message in self.client.iter_messages(source_chat_id, reverse=True):
+                # Album grouping: buffer messages with same grouped_id
+                if message.grouped_id:
+                    if album_gid and message.grouped_id != album_gid:
+                        # New album started, flush the previous one
+                        await flush_album()
+                    album_gid = message.grouped_id
+                    album_buffer.append(message)
+                    continue
+
+                # Non-album message: flush any pending album first
+                if album_buffer:
+                    await flush_album()
+                    album_gid = None
+
                 if message.id in synced_ids:
                     skip_count += 1
                     continue
@@ -118,6 +173,10 @@ class HistorySyncer:
                     })
 
                 await asyncio.sleep(SEND_DELAY)
+
+            # Flush final album if any
+            if album_buffer:
+                await flush_album()
 
         except asyncio.CancelledError:
             logger.info("[同步] 规则 %d: 已取消, 已转发 %d 条", rule_id, synced_count)

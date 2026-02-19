@@ -23,6 +23,7 @@ from telethon.tl.types import (
 
 from app.core.events import event_bus
 from app.models.message import ContentType, MessageLog, MessageStatus
+from app.telegram.fast_transfer import parallel_download_media, parallel_upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ class MessageForwarder:
         # S3: 下载 → 重传（保留元数据）
         if message.media:
             logger.info("[规则 %d] S3 下载消息 %d...", rule_id, message.id)
-            data = await self.client.download_media(message, bytes)
+            data = await parallel_download_media(self.client, message)
             if data:
                 media_attrs = _extract_media_attrs(message)
                 file_name = media_attrs.get("file_name", _guess_upload_name(message))
@@ -290,6 +291,61 @@ class MessageForwarder:
         raise RuntimeError(f"不支持的消息类型 msg {message.id}")
 
     # ── 相册处理 ──────────────────────────────────────────────
+
+    async def forward_album(self, messages: list, target_chat: int, rule_id: int) -> None:
+        """同步模式: 直接转发完整相册, 为每条消息创建 MessageLog."""
+        messages = sorted(messages, key=lambda m: m.id)
+        logger.info("[规则 %d] 转发相册 (%d 条), msg_ids=%s", rule_id, len(messages), [m.id for m in messages])
+
+        async with self._session_factory() as session:
+            logs = []
+            for msg in messages:
+                log = MessageLog(
+                    rule_id=rule_id,
+                    source_msg_id=msg.id,
+                    content_type=ContentType.ALBUM,
+                    status=MessageStatus.PENDING,
+                    text_preview=(msg.text or "")[:200] or None,
+                )
+                session.add(log)
+                logs.append(log)
+
+            try:
+                results = await self._try_forward_album(messages, target_chat, rule_id=rule_id)
+                first = results[0] if isinstance(results, list) and results else results
+                target_msg_id = first.id if first else None
+                for log in logs:
+                    log.target_msg_id = target_msg_id
+                    log.status = MessageStatus.SUCCESS
+                logger.info("[规则 %d] 相册 (%d 条) -> 转发成功", rule_id, len(messages))
+                await event_bus.publish({
+                    "type": "forward_result",
+                    "rule_id": rule_id,
+                    "source_msg_id": messages[0].id,
+                    "target_msg_id": target_msg_id,
+                    "status": "success",
+                    "content_type": ContentType.ALBUM.value,
+                    "error": None,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception as e:
+                for log in logs:
+                    log.status = MessageStatus.FAILED
+                    log.error = str(e)[:500]
+                logger.error("[规则 %d] 相册转发失败: %s", rule_id, e)
+                await event_bus.publish({
+                    "type": "forward_result",
+                    "rule_id": rule_id,
+                    "source_msg_id": messages[0].id,
+                    "target_msg_id": None,
+                    "status": "failed",
+                    "content_type": ContentType.ALBUM.value,
+                    "error": str(e)[:500],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                raise
+
+            await session.commit()
 
     async def _collect_album(self, message, target_chat: int, rule_id: int) -> None:
         gid = message.grouped_id
@@ -400,7 +456,7 @@ class MessageForwarder:
         for msg in messages:
             if not msg.media:
                 continue
-            data = await self.client.download_media(msg, bytes)
+            data = await parallel_download_media(self.client, msg)
             if not data:
                 continue
 
@@ -408,7 +464,7 @@ class MessageForwarder:
             file_name = media_attrs.get("file_name", _guess_upload_name(msg))
             is_video = bool(msg.video or msg.video_note)
 
-            uploaded = await self.client.upload_file(_named_bytes_io(data, file_name))
+            uploaded = await parallel_upload_file(self.client, data, file_name)
 
             if msg.photo and len(data) <= PHOTO_SIZE_LIMIT:
                 input_media = InputMediaUploadedPhoto(file=uploaded)
