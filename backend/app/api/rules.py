@@ -2,7 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.core.database import async_session
 from app.models.message import ForwardRule, MessageLog
@@ -107,6 +107,9 @@ async def delete_rule(rule_id: int, request: Request):
         if not rule:
             raise HTTPException(status_code=404, detail="Rule not found")
 
+        await session.execute(
+            delete(MessageLog).where(MessageLog.rule_id == rule_id)
+        )
         await session.delete(rule)
         await session.commit()
 
