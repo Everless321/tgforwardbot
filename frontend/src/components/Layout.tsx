@@ -11,25 +11,25 @@ export default function Layout() {
         <nav className="sidebar-nav">
           <NavLink to="/dashboard" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             <span className="nav-icon">⬛</span>
-            Dashboard
+            仪表盘
           </NavLink>
           <NavLink to="/rules" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             <span className="nav-icon">⚙</span>
-            Rules
+            转发规则
           </NavLink>
           <NavLink to="/messages" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             <span className="nav-icon">💬</span>
-            Messages
+            消息记录
           </NavLink>
           <NavLink to="/logs" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             <span className="nav-icon">📋</span>
-            Logs
+            系统日志
           </NavLink>
         </nav>
         <div className="sidebar-bottom">
           <NavLink to="/account" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             <span className="nav-icon">👤</span>
-            Account
+            账户
           </NavLink>
         </div>
       </aside>

@@ -37,7 +37,7 @@ export default function Rules() {
       setChannels(channelsData)
       setError(null)
     } catch {
-      setError('Failed to load data')
+      setError('加载数据失败')
     } finally {
       setLoadingChannels(false)
     }
@@ -68,7 +68,7 @@ export default function Rules() {
       const channelsData = await fetchChannels(true)
       setChannels(channelsData)
     } catch {
-      setError('Failed to refresh channels')
+      setError('刷新频道失败')
     } finally {
       setRefreshing(false)
     }
@@ -79,7 +79,7 @@ export default function Rules() {
     const src = parseInt(sourceId, 10)
     const tgt = parseInt(targetId, 10)
     if (!src || !tgt) return
-    if (src === tgt) { setError('Source and target cannot be the same'); return }
+    if (src === tgt) { setError('源频道和目标频道不能相同'); return }
     setSubmitting(true)
     try {
       await createRule({ source_chat_id: src, target_chat_id: tgt })
@@ -87,7 +87,7 @@ export default function Rules() {
       setTargetId('')
       await load()
     } catch {
-      setError('Failed to create rule')
+      setError('创建规则失败')
     } finally {
       setSubmitting(false)
     }
@@ -98,17 +98,17 @@ export default function Rules() {
       await updateRule(rule.id, { enabled: !rule.enabled })
       await load()
     } catch {
-      setError('Failed to update rule')
+      setError('更新规则失败')
     }
   }
 
   const handleDelete = async (rule: Rule) => {
-    if (!window.confirm(`Delete rule #${rule.id}?`)) return
+    if (!window.confirm(`确认删除规则 #${rule.id}？`)) return
     try {
       await deleteRule(rule.id)
       await load()
     } catch {
-      setError('Failed to delete rule')
+      setError('删除规则失败')
     }
   }
 
@@ -121,7 +121,7 @@ export default function Rules() {
       }
       await load()
     } catch {
-      setError('Failed to toggle sync')
+      setError('同步操作失败')
     }
   }
 
@@ -131,25 +131,25 @@ export default function Rules() {
   }
 
   const syncLabel = (rule: Rule) => {
-    if (rule.sync_status === 'syncing') return `Syncing… (${rule.synced_msg_count})`
-    if (rule.sync_status === 'done') return `Done (${rule.synced_msg_count})`
-    return 'Idle'
+    if (rule.sync_status === 'syncing') return `同步中… (${rule.synced_msg_count})`
+    if (rule.sync_status === 'done') return `已完成 (${rule.synced_msg_count})`
+    return '空闲'
   }
 
   return (
     <div className="page">
-      <h1 className="page-title">Rules</h1>
+      <h1 className="page-title">转发规则</h1>
 
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 className="section-title" style={{ margin: 0 }}>Add Rule</h2>
+          <h2 className="section-title" style={{ margin: 0 }}>添加规则</h2>
           <button
             className="btn btn-sm"
             onClick={handleRefreshChannels}
             disabled={refreshing}
             style={{ whiteSpace: 'nowrap' }}
           >
-            {refreshing ? '⏳ Refreshing…' : '🔄 Refresh Channels'}
+            {refreshing ? '⏳ 刷新中…' : '🔄 刷新频道'}
           </button>
         </div>
         <form className="add-form" onSubmit={handleAdd}>
@@ -157,7 +157,7 @@ export default function Rules() {
             options={channelOptions}
             value={sourceId}
             onChange={setSourceId}
-            placeholder={loadingChannels ? 'Loading…' : 'Source channel'}
+            placeholder={loadingChannels ? '加载中…' : '源频道'}
             disabled={loadingChannels}
           />
           <span className="form-arrow">→</span>
@@ -165,11 +165,11 @@ export default function Rules() {
             options={channelOptions}
             value={targetId}
             onChange={setTargetId}
-            placeholder={loadingChannels ? 'Loading…' : 'Target channel'}
+            placeholder={loadingChannels ? '加载中…' : '目标频道'}
             disabled={loadingChannels}
           />
           <button className="btn btn-primary" type="submit" disabled={submitting || !sourceId || !targetId}>
-            {submitting ? 'Adding…' : 'Add Rule'}
+            {submitting ? '添加中…' : '添加'}
           </button>
         </form>
       </div>
@@ -180,19 +180,19 @@ export default function Rules() {
         <table className="table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Source</th>
-              <th>Target</th>
-              <th>Enabled</th>
-              <th>Sync</th>
-              <th>Messages</th>
-              <th>Created</th>
-              <th>Actions</th>
+              <th>编号</th>
+              <th>源频道</th>
+              <th>目标频道</th>
+              <th>状态</th>
+              <th>同步</th>
+              <th>消息数</th>
+              <th>创建时间</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
             {rules.length === 0 ? (
-              <tr><td colSpan={8} className="empty-cell">No rules configured</td></tr>
+              <tr><td colSpan={8} className="empty-cell">暂无转发规则</td></tr>
             ) : rules.map(rule => (
               <tr key={rule.id}>
                 <td>#{rule.id}</td>
@@ -203,7 +203,7 @@ export default function Rules() {
                     className={`toggle ${rule.enabled ? 'toggle-on' : 'toggle-off'}`}
                     onClick={() => handleToggle(rule)}
                   >
-                    {rule.enabled ? 'ON' : 'OFF'}
+                    {rule.enabled ? '开启' : '关闭'}
                   </button>
                 </td>
                 <td>
@@ -213,15 +213,15 @@ export default function Rules() {
                       className={`btn btn-sm ${rule.sync_status === 'syncing' ? 'btn-danger' : 'btn-primary'}`}
                       onClick={() => handleSync(rule)}
                     >
-                      {rule.sync_status === 'syncing' ? 'Stop' : 'Sync'}
+                      {rule.sync_status === 'syncing' ? '停止' : '同步'}
                     </button>
                   </div>
                 </td>
                 <td>{rule.message_count}</td>
-                <td className="meta-text">{new Date(rule.created_at).toLocaleDateString()}</td>
+                <td className="meta-text">{new Date(rule.created_at).toLocaleDateString('zh-CN')}</td>
                 <td>
                   <button className="btn btn-danger btn-sm" onClick={() => handleDelete(rule)}>
-                    Delete
+                    删除
                   </button>
                 </td>
               </tr>

@@ -485,6 +485,14 @@ body {
   white-space: nowrap;
 }
 
+.preview-cell {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
 .pagination {
   display: flex;
   align-items: center;

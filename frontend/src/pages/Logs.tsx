@@ -32,15 +32,15 @@ export default function Logs() {
   }, [logs])
 
   const filters = [
-    { label: 'All', value: undefined },
+    { label: '全部', value: undefined },
     { label: 'INFO', value: 'INFO' },
-    { label: 'WARN', value: 'WARNING' },
-    { label: 'ERROR', value: 'ERROR' },
+    { label: '警告', value: 'WARNING' },
+    { label: '错误', value: 'ERROR' },
   ]
 
   const formatTime = (ts: string) => {
     try {
-      return new Date(ts).toLocaleTimeString('en-GB', { hour12: false })
+      return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })
     } catch {
       return ts
     }
@@ -48,7 +48,7 @@ export default function Logs() {
 
   return (
     <div className="page">
-      <h1 className="page-title">Logs</h1>
+      <h1 className="page-title">系统日志</h1>
       <div className="log-filters">
         {filters.map(f => (
           <button
@@ -62,7 +62,7 @@ export default function Logs() {
       </div>
       <div className="log-container" ref={containerRef}>
         {logs.length === 0 ? (
-          <div className="log-empty">No logs</div>
+          <div className="log-empty">暂无日志</div>
         ) : (
           logs.map((entry, i) => (
             <div key={i} className="log-entry">

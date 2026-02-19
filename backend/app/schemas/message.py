@@ -13,6 +13,7 @@ class MessageResponse(BaseModel):
     content_type: ContentType
     status: MessageStatus
     error: str | None
+    text_preview: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.api.auth import router as auth_router
 from app.api.channels import router as channels_router
@@ -52,6 +52,12 @@ async def load_rules_from_db() -> dict[int, list[tuple[int, int]]]:
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute(text(
+                "ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS text_preview VARCHAR(200)"
+            ))
+        except Exception:
+            pass
 
     client = create_client()
     forwarder = MessageForwarder(client, async_session)
@@ -67,14 +73,14 @@ async def lifespan(app: FastAPI):
         rule_map = await load_rules_from_db()
         register_handlers(client, rule_map, forwarder)
         app.state.rule_map = rule_map
-        logger.info("TG Forward Bot started. Monitoring %d source channels.", len(rule_map))
+        logger.info("TG Forward Bot 已启动, 监控 %d 个源频道", len(rule_map))
     else:
-        logger.info("TG Forward Bot started. Waiting for web UI authentication.")
+        logger.info("TG Forward Bot 已启动, 等待网页端认证")
 
     yield
 
     await client.disconnect()
-    logger.info("TG Forward Bot stopped.")
+    logger.info("TG Forward Bot 已停止")
 
 
 app = FastAPI(title="TG Forward Bot", lifespan=lifespan)

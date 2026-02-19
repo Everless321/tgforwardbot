@@ -18,6 +18,7 @@ export interface Message {
   content_type: 'text' | 'photo' | 'video' | 'document' | 'audio' | 'voice' | 'sticker' | 'animation' | 'album' | 'other'
   status: 'pending' | 'success' | 'failed'
   error: string | null
+  text_preview: string | null
   created_at: string
 }
 
@@ -143,7 +144,7 @@ export const fetchMessages = (params: FetchMessagesParams = {}): Promise<Message
   if (params.page_size) q.set('page_size', String(params.page_size))
   if (params.status) q.set('status', params.status)
   if (params.rule_id) q.set('rule_id', String(params.rule_id))
-  return request<MessageList>(`/api/messages?${q}`)
+  return request<MessageList>(`/api/messages/?${q}`)
 }
 
 export const fetchStatus = (): Promise<Status> =>

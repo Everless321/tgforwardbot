@@ -63,6 +63,7 @@ class MessageLog(Base):
         Enum(MessageStatus), default=MessageStatus.PENDING
     )
     error: Mapped[str | None] = mapped_column(Text)
+    text_preview: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     rule: Mapped[ForwardRule] = relationship(back_populates="messages")

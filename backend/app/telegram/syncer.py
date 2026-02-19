@@ -78,12 +78,12 @@ class HistorySyncer:
         async with self._session_factory() as session:
             rule = await session.get(ForwardRule, rule_id)
             if not rule:
-                logger.error("Rule %d not found", rule_id)
+                logger.error("[同步] 规则 %d 不存在", rule_id)
                 return
             source_chat_id = rule.source_chat_id
             target_chat_id = rule.target_chat_id
 
-        logger.info("[Sync] Rule %d: starting (source=%d -> target=%d)", rule_id, source_chat_id, target_chat_id)
+        logger.info("[同步] 规则 %d: 开始 (源=%d -> 目标=%d)", rule_id, source_chat_id, target_chat_id)
         synced_ids = await self._get_synced_msg_ids(rule_id)
         synced_count = 0
         skip_count = 0
@@ -97,17 +97,17 @@ class HistorySyncer:
                 try:
                     await self.forwarder.forward(message, target_chat_id, rule_id)
                     synced_count += 1
-                    logger.info("[Sync] Rule %d: progress %d messages forwarded", rule_id, synced_count)
+                    logger.info("[同步] 规则 %d: 已转发 %d 条消息", rule_id, synced_count)
                 except FloodWaitError as e:
-                    logger.warning("[Sync] Rule %d: FloodWait %ds at msg %d, sleeping...", rule_id, e.seconds, message.id)
+                    logger.warning("[同步] 规则 %d: 限流等待 %d 秒 (消息 %d)", rule_id, e.seconds, message.id)
                     await asyncio.sleep(e.seconds + 1)
                     try:
                         await self.forwarder.forward(message, target_chat_id, rule_id)
                         synced_count += 1
                     except Exception as retry_err:
-                        logger.error("[Sync] Rule %d: failed msg %d: %s", rule_id, message.id, retry_err)
+                        logger.error("[同步] 规则 %d: 消息 %d 失败: %s", rule_id, message.id, retry_err)
                 except Exception as e:
-                    logger.error("[Sync] Rule %d: failed msg %d: %s", rule_id, message.id, e)
+                    logger.error("[同步] 规则 %d: 消息 %d 失败: %s", rule_id, message.id, e)
 
                 if synced_count % 10 == 0:
                     await self._set_sync_status(rule_id, SyncStatus.SYNCING, synced_count)
@@ -120,11 +120,11 @@ class HistorySyncer:
                 await asyncio.sleep(SEND_DELAY)
 
         except asyncio.CancelledError:
-            logger.info("[Sync] Rule %d: cancelled at %d messages", rule_id, synced_count)
+            logger.info("[同步] 规则 %d: 已取消, 已转发 %d 条", rule_id, synced_count)
             await self._set_sync_status(rule_id, SyncStatus.IDLE, synced_count)
             return
         except Exception as e:
-            logger.error("Sync error for rule %d: %s", rule_id, e)
+            logger.error("[同步] 规则 %d 异常: %s", rule_id, e)
             await self._set_sync_status(rule_id, SyncStatus.IDLE, synced_count)
             return
         finally:
@@ -136,4 +136,4 @@ class HistorySyncer:
             "rule_id": rule_id,
             "synced_count": synced_count,
         })
-        logger.info("[Sync] Rule %d: complete! %d forwarded, %d skipped", rule_id, synced_count, skip_count)
+        logger.info("[同步] 规则 %d: 完成! 转发 %d 条, 跳过 %d 条", rule_id, synced_count, skip_count)

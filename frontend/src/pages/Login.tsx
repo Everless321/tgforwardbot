@@ -38,7 +38,7 @@ export default function Login() {
         <input
           className="input login-input"
           type="password"
-          placeholder="Password"
+          placeholder="请输入密码"
           value={password}
           onChange={e => setPassword(e.target.value)}
           autoFocus

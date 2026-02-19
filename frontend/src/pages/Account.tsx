@@ -5,7 +5,7 @@ type Step = 'phone' | 'code' | '2fa' | 'done'
 
 function StepIndicator({ step }: { step: Step }) {
   const steps: Step[] = ['phone', 'code', '2fa']
-  const labels = ['Phone', 'Code', '2FA']
+  const labels = ['手机号', '验证码', '两步验证']
   const current = steps.indexOf(step)
 
   return (
@@ -41,7 +41,7 @@ export default function Account() {
         setStep('done')
       }
     } catch {
-      // not authorized, stay on phone step
+      // not authorized
     } finally {
       setChecking(false)
     }
@@ -56,7 +56,7 @@ export default function Account() {
       await sendCode(phone)
       setStep('code')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to send code')
+      setError(e instanceof Error ? e.message : '发送验证码失败')
     } finally {
       setLoading(false)
     }
@@ -74,7 +74,7 @@ export default function Account() {
         setStep('done')
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Invalid code')
+      setError(e instanceof Error ? e.message : '验证码无效')
     } finally {
       setLoading(false)
     }
@@ -88,7 +88,7 @@ export default function Account() {
       setUser(result.user)
       setStep('done')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Invalid password')
+      setError(e instanceof Error ? e.message : '密码无效')
     } finally {
       setLoading(false)
     }
@@ -105,7 +105,7 @@ export default function Account() {
       setPassword('')
       setStep('phone')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Logout failed')
+      setError(e instanceof Error ? e.message : '退出失败')
     } finally {
       setLoading(false)
     }
@@ -115,7 +115,7 @@ export default function Account() {
     return (
       <div className="page auth-page">
         <div className="auth-card">
-          <p className="auth-checking">Checking auth status…</p>
+          <p className="auth-checking">检查认证状态…</p>
         </div>
       </div>
     )
@@ -124,7 +124,7 @@ export default function Account() {
   return (
     <div className="page auth-page">
       <div className="auth-card">
-        <h1 className="auth-title">Account</h1>
+        <h1 className="auth-title">Telegram 账户</h1>
 
         {step !== 'done' && <StepIndicator step={step} />}
 
@@ -132,11 +132,11 @@ export default function Account() {
 
         {step === 'phone' && (
           <div className="auth-form">
-            <label className="auth-label">Phone Number</label>
+            <label className="auth-label">手机号码</label>
             <input
               className="input auth-input"
               type="tel"
-              placeholder="+1234567890"
+              placeholder="+8613800138000"
               value={phone}
               onChange={e => setPhone(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !loading && phone && handleSendCode()}
@@ -147,15 +147,15 @@ export default function Account() {
               onClick={handleSendCode}
               disabled={loading || !phone.trim()}
             >
-              {loading ? 'Sending…' : 'Send Code'}
+              {loading ? '发送中…' : '发送验证码'}
             </button>
           </div>
         )}
 
         {step === 'code' && (
           <div className="auth-form">
-            <label className="auth-label">Verification Code</label>
-            <p className="auth-hint">Enter the code sent to {phone}</p>
+            <label className="auth-label">验证码</label>
+            <p className="auth-hint">验证码已发送至 {phone}</p>
             <input
               className="input auth-input auth-input-code"
               type="text"
@@ -172,22 +172,22 @@ export default function Account() {
               onClick={handleVerify}
               disabled={loading || !code.trim()}
             >
-              {loading ? 'Verifying…' : 'Verify'}
+              {loading ? '验证中…' : '验证'}
             </button>
             <button className="btn btn-secondary auth-btn-back" onClick={() => { setStep('phone'); setError(null) }}>
-              Back
+              返回
             </button>
           </div>
         )}
 
         {step === '2fa' && (
           <div className="auth-form">
-            <label className="auth-label">Two-Factor Password</label>
-            <p className="auth-hint">Your account has 2FA enabled</p>
+            <label className="auth-label">两步验证密码</label>
+            <p className="auth-hint">您的账户已开启两步验证</p>
             <input
               className="input auth-input"
               type="password"
-              placeholder="Enter your password"
+              placeholder="请输入两步验证密码"
               value={password}
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !loading && password && handle2FA()}
@@ -198,7 +198,7 @@ export default function Account() {
               onClick={handle2FA}
               disabled={loading || !password.trim()}
             >
-              {loading ? 'Verifying…' : 'Submit'}
+              {loading ? '验证中…' : '提交'}
             </button>
           </div>
         )}
@@ -206,19 +206,19 @@ export default function Account() {
         {step === 'done' && user && (
           <div className="auth-success">
             <div className="auth-success-icon">✓</div>
-            <h2 className="auth-success-title">Authenticated</h2>
+            <h2 className="auth-success-title">已认证</h2>
             <div className="auth-user-info">
               <div className="auth-user-row">
-                <span className="auth-user-label">Name</span>
+                <span className="auth-user-label">昵称</span>
                 <span className="auth-user-value">{user.first_name}</span>
               </div>
               <div className="auth-user-row">
-                <span className="auth-user-label">Phone</span>
+                <span className="auth-user-label">手机号</span>
                 <span className="auth-user-value">{user.phone}</span>
               </div>
               {user.username && (
                 <div className="auth-user-row">
-                  <span className="auth-user-label">Username</span>
+                  <span className="auth-user-label">用户名</span>
                   <span className="auth-user-value">@{user.username}</span>
                 </div>
               )}
@@ -228,7 +228,7 @@ export default function Account() {
               onClick={handleLogout}
               disabled={loading}
             >
-              {loading ? 'Logging out…' : 'Logout'}
+              {loading ? '退出中…' : '退出登录'}
             </button>
           </div>
         )}

@@ -149,7 +149,7 @@ class MessageForwarder:
 
     async def _forward_single(self, message, target_chat: int, rule_id: int) -> None:
         content_type = detect_content_type(message)
-        logger.info("[Rule %d] Forwarding msg %d (type=%s)", rule_id, message.id, content_type.value)
+        logger.info("[规则 %d] 转发消息 %d (类型=%s)", rule_id, message.id, content_type.value)
 
         async with self._session_factory() as session:
             log = MessageLog(
@@ -157,6 +157,7 @@ class MessageForwarder:
                 source_msg_id=message.id,
                 content_type=content_type,
                 status=MessageStatus.PENDING,
+                text_preview=(message.text or "")[:200] or None,
             )
             session.add(log)
 
@@ -164,7 +165,7 @@ class MessageForwarder:
                 result = await self._try_forward(message, target_chat, rule_id=rule_id)
                 log.target_msg_id = result.id if result else None
                 log.status = MessageStatus.SUCCESS
-                logger.info("[Rule %d] msg %d -> target OK (type=%s)", rule_id, message.id, content_type.value)
+                logger.info("[规则 %d] 消息 %d -> 转发成功 (类型=%s)", rule_id, message.id, content_type.value)
                 await event_bus.publish({
                     "type": "forward_result",
                     "rule_id": rule_id,
@@ -178,7 +179,7 @@ class MessageForwarder:
             except Exception as e:
                 log.status = MessageStatus.FAILED
                 log.error = str(e)[:500]
-                logger.error("[Rule %d] msg %d FAILED: %s", rule_id, message.id, e)
+                logger.error("[规则 %d] 消息 %d 转发失败: %s", rule_id, message.id, e)
                 await event_bus.publish({
                     "type": "forward_result",
                     "rule_id": rule_id,
@@ -206,27 +207,27 @@ class MessageForwarder:
         return result
 
     async def _try_forward(self, message, target_chat: int, rule_id: int = 0):
-        # S1: direct forward (unrestricted channels)
+        # S1: 直接转发
         try:
             result = await self.client.forward_messages(target_chat, message)
-            logger.info("[Rule %d] S1 direct forward msg %d -> OK", rule_id, message.id)
+            logger.info("[规则 %d] S1 直接转发消息 %d -> 成功", rule_id, message.id)
             return result[0] if isinstance(result, list) else result
         except Exception as e:
-            logger.info("[Rule %d] S1 failed msg %d: %s, trying S2...", rule_id, message.id, e)
+            logger.info("[规则 %d] S1 失败消息 %d: %s, 尝试 S2...", rule_id, message.id, e)
 
-        # S2: raw MTProto SendMediaRequest (bypass Telethon noforwards check)
+        # S2: 原始 MTProto 协议
         if message.media:
             try:
                 result = await self._raw_send_media(message, target_chat)
                 if result:
-                    logger.info("[Rule %d] S2 raw MTProto msg %d -> OK", rule_id, message.id)
+                    logger.info("[规则 %d] S2 原始协议消息 %d -> 成功", rule_id, message.id)
                     return result
             except Exception as e:
-                logger.info("[Rule %d] S2 failed msg %d: %s, trying S3...", rule_id, message.id, e)
+                logger.info("[规则 %d] S2 失败消息 %d: %s, 尝试 S3...", rule_id, message.id, e)
 
-        # S3: download bytes → re-upload with metadata preserved
+        # S3: 下载 → 重传（保留元数据）
         if message.media:
-            logger.info("[Rule %d] S3 downloading msg %d...", rule_id, message.id)
+            logger.info("[规则 %d] S3 下载消息 %d...", rule_id, message.id)
             data = await self.client.download_media(message, bytes)
             if data:
                 media_attrs = _extract_media_attrs(message)
@@ -261,23 +262,23 @@ class MessageForwarder:
 
                 result = await self.client.send_file(target_chat, upload_file, **send_kwargs)
                 logger.info(
-                    "[Rule %d] S3 download+reupload OK msg %d (thumb=%s, duration=%s)",
+                    "[规则 %d] S3 下载重传成功消息 %d (封面=%s, 时长=%s)",
                     rule_id, message.id, thumb is not None, media_attrs.get("duration"),
                 )
                 return result
 
-        # S4: text-only
+        # S4: 纯文本
         if message.text:
-            logger.info("[Rule %d] S4 text-only msg %d -> sending", rule_id, message.id)
+            logger.info("[规则 %d] S4 纯文本消息 %d -> 发送", rule_id, message.id)
             return await self.client.send_message(
                 target_chat,
                 message.text,
                 formatting_entities=message.entities,
             )
 
-        raise RuntimeError(f"Unsupported message type for msg {message.id}")
+        raise RuntimeError(f"不支持的消息类型 msg {message.id}")
 
-    # ── album handling ──────────────────────────────────────────────
+    # ── 相册处理 ──────────────────────────────────────────────
 
     async def _collect_album(self, message, target_chat: int, rule_id: int) -> None:
         gid = message.grouped_id
@@ -312,6 +313,7 @@ class MessageForwarder:
                 source_msg_id=messages[0].id,
                 content_type=ContentType.ALBUM,
                 status=MessageStatus.PENDING,
+                text_preview=(messages[0].text or "")[:200] or None,
             )
             session.add(log)
 
@@ -320,7 +322,7 @@ class MessageForwarder:
                 first = results[0] if isinstance(results, list) and results else results
                 log.target_msg_id = first.id if first else None
                 log.status = MessageStatus.SUCCESS
-                logger.info("[Rule %d] album (%d items) -> target OK", rule_id, len(messages))
+                logger.info("[规则 %d] 相册 (%d 条) -> 转发成功", rule_id, len(messages))
                 await event_bus.publish({
                     "type": "forward_result",
                     "rule_id": rule_id,
@@ -334,7 +336,7 @@ class MessageForwarder:
             except Exception as e:
                 log.status = MessageStatus.FAILED
                 log.error = str(e)[:500]
-                logger.error("[Rule %d] album FAILED: %s", rule_id, e)
+                logger.error("[规则 %d] 相册转发失败: %s", rule_id, e)
                 await event_bus.publish({
                     "type": "forward_result",
                     "rule_id": rule_id,
@@ -349,15 +351,15 @@ class MessageForwarder:
             await session.commit()
 
     async def _try_forward_album(self, messages: list, target_chat: int, rule_id: int = 0) -> list:
-        # S1: direct forward
+        # S1: 直接转发
         try:
             result = await self.client.forward_messages(target_chat, messages)
-            logger.info("[Rule %d] S1 direct forward album (%d items) -> OK", rule_id, len(messages))
+            logger.info("[规则 %d] S1 直接转发相册 (%d 条) -> 成功", rule_id, len(messages))
             return result
         except Exception as e:
-            logger.info("[Rule %d] S1 album failed: %s, trying S2...", rule_id, e)
+            logger.info("[规则 %d] S1 相册失败: %s, 尝试 S2...", rule_id, e)
 
-        # S2: raw MTProto SendMultiMediaRequest (bypass noforwards)
+        # S2: 原始 MTProto 协议
         target = await self.client.get_input_entity(target_chat)
         multi_media = []
         for m in messages:
@@ -375,12 +377,12 @@ class MessageForwarder:
                     peer=target,
                     multi_media=multi_media,
                 ))
-                logger.info("[Rule %d] S2 raw MTProto album (%d items) -> OK", rule_id, len(messages))
+                logger.info("[规则 %d] S2 原始协议相册 (%d 条) -> 成功", rule_id, len(messages))
                 return result
             except Exception as e:
-                logger.info("[Rule %d] S2 album failed: %s, trying S3...", rule_id, e)
+                logger.info("[规则 %d] S2 相册失败: %s, 尝试 S3...", rule_id, e)
 
-        # S3: download → re-upload with metadata preserved
+        # S3: 下载 → 重传
         files = []
         caps = []
         for msg in messages:
@@ -393,7 +395,7 @@ class MessageForwarder:
                     caps.append(msg.text or "")
 
         if files:
-            logger.info("[Rule %d] S3 album download+reupload (%d files) -> sending", rule_id, len(files))
+            logger.info("[规则 %d] S3 相册下载重传 (%d 个文件) -> 发送中", rule_id, len(files))
             return await self.client.send_file(target_chat, files, caption=caps)
 
-        raise RuntimeError("Album forward failed: no media found")
+        raise RuntimeError("相册转发失败: 无媒体内容")
